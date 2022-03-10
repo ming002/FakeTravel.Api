@@ -1,10 +1,14 @@
 ﻿using AutoMapper;
 using FakeTravel.API.Dtos;
+using FakeTravel.API.Helper;
 using FakeTravel.API.Models;
 using FakeTravel.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
@@ -66,7 +70,7 @@ namespace FakeTravel.API.Controllers
             await _touristRouteReposity.SaveAsync();
             return Ok(_mapper.Map<ShoppingCartDto>(shoppingCart));
         }
-        [HttpPost("items/{itemId}")]
+        [HttpDelete("items/{itemId}")]
         [Authorize(AuthenticationSchemes = "Bearer")]
         public async Task<IActionResult> DeleteShoppingCartItem(
             [FromRoute] int itemId)
@@ -80,6 +84,46 @@ namespace FakeTravel.API.Controllers
             _touristRouteReposity.DeleteShoppingCartItem(lineItem);
             await _touristRouteReposity.SaveAsync();
             return NoContent();
+        }
+
+        [HttpDelete("items/({itemIDs})")]
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        public async Task<IActionResult> DeleteShoppingCartItems(
+            [ModelBinder(BinderType =typeof(ArrayModelBinder))]
+            [FromRoute]IEnumerable<int> itemIDs)
+        {
+            var lineItems= await _touristRouteReposity.
+                GetShoppingCartItemsByIdListAsync(itemIDs);
+
+            _touristRouteReposity.DeleteShoppingCartItems(lineItems);
+             await _touristRouteReposity.SaveAsync();
+
+            return NoContent();
+        }
+
+        [HttpPost("checkout")]
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        public async Task<IActionResult> Checkout()
+        {
+            //1.获得当前用户
+            var userId = _httpContextAccessor
+                .HttpContext.User.FindFirst(ClaimTypes.NameIdentifier).Value;
+            //使用UserId获得购物车
+            var shoppingCart = await _touristRouteReposity
+                .GetShoppingCartByUserId(userId);
+            var order = new Order()
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                State=OrderStatuEnum.Peding,
+                OrderItems = shoppingCart.ShoppingCartItems,
+                CreateDateUTC = DateTime.UtcNow
+            };
+            shoppingCart.ShoppingCartItems = null;
+
+            await _touristRouteReposity.AddOrderAsync(order);
+            await _touristRouteReposity.SaveAsync();
+            return Ok(_mapper.Map<OrderDto>(order));
         }
     }
 }

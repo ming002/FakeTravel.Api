@@ -14,6 +14,8 @@ using Microsoft.AspNetCore.JsonPatch;
 using FakeTravel.API.Helper;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc.Routing;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 
 namespace FakeTravel.API.Controllers
 {
@@ -23,27 +25,98 @@ namespace FakeTravel.API.Controllers
     {
         private ITouristRouteReposity _touristRouteReposity;
         private readonly IMapper _mapper;
+        private readonly IUrlHelper _urlHelper;
         public TouristRoutesController(
             ITouristRouteReposity touristRouteReposity,
-            IMapper mapper)
+            IMapper mapper,
+            IUrlHelperFactory urlHelperFactory,
+            IActionContextAccessor actionContextAccessor)
         {
             _touristRouteReposity = touristRouteReposity;
             _mapper = mapper;
+            _urlHelper = urlHelperFactory.GetUrlHelper(actionContextAccessor.ActionContext);
         }
-        [HttpGet]
+
+        private string GenerateTouristRouteResourceURL(
+             TouristRouteResourceParameters parameters,
+             PaginationResourceParameters parameters2,
+             ResourceUrlType resourceUrlType)
+        {
+            return resourceUrlType switch
+            {
+                ResourceUrlType.PreviousPage => _urlHelper.Link("GetTouristRoutes",
+                new
+                {
+                    keyword = parameters.Keyword,
+                    rating = parameters.Rating,
+                    pageNum = parameters2.PageNum - 1,
+                    pagesize = parameters2.PageSize
+                }),
+                ResourceUrlType.NextPage => _urlHelper.Link("GetTouristRoutes",
+                new
+                {
+                    keyword = parameters.Keyword,
+                    rating = parameters.Rating,
+                    pageNum = parameters2.PageNum + 1,
+                    pagesize = parameters2.PageSize
+                }),
+                _ => _urlHelper.Link("GetTouristRoutes",
+                new
+                {
+                    keyword = parameters.Keyword,
+                    rating = parameters.Rating,
+                    pageNum = parameters2.PageNum - 1,
+                    pagesize = parameters2.PageSize
+                }),
+            };
+            
+        }
+
+        [HttpGet(Name = "GetTouristRoutes")]
         [HttpHead]
         public async Task<IActionResult> GetTouristRoutes(
-            [FromQuery] TouristRouteResourceParameters parameters)
+            [FromQuery] TouristRouteResourceParameters parameters,
+            [FromQuery]PaginationResourceParameters parameters2)
         {
 
             var routes =await _touristRouteReposity.
-                 GetTouristRoutesAsync(parameters.Keyword, parameters.RatingOperator, parameters.RatingValue);
+                 GetTouristRoutesAsync(
+                parameters.Keyword,
+                 parameters.RatingOperator,
+                 parameters.RatingValue,
+                 parameters2.PageSize,
+                 parameters2.PageNum,
+                 parameters.OrderBy);
 
             if (routes == null || routes.Count() <= 0)
             {
                 return NotFound("找不到旅游路线");
             }
             var touristRouteDto = _mapper.Map<IEnumerable<TouristRouteDto>>(routes);
+
+            var previousPageLink = routes.HasPrevious
+                ? GenerateTouristRouteResourceURL(
+                    parameters, parameters2, ResourceUrlType.PreviousPage) 
+                : null;
+
+            var nextPageLink = routes.HasNext
+               ? GenerateTouristRouteResourceURL(
+                   parameters, parameters2, ResourceUrlType.NextPage)
+               : null;
+            //给响应头部加上分页信息
+            var pageinationMetadata = new
+            {
+                previousPageLink,
+                nextPageLink,
+                totalCount=routes.TotalCount,
+                pageSize=routes.PageSize,
+                currentPage=routes.CurrentPage,
+                tatalPages=routes.TotalPages
+            };
+
+            Response.Headers.Add("x-pagination",
+                Newtonsoft.Json.JsonConvert.SerializeObject(pageinationMetadata));
+
             return Ok(touristRouteDto);
         }
 

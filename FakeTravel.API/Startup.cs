@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,6 +54,7 @@ namespace FakeTravel.API
                         IssuerSigningKey=new SymmetricSecurityKey(secretByte),
                     };
                 });
+
             services.AddControllers(setupAction =>
             {
                 setupAction.ReturnHttpNotAcceptable = true;
@@ -83,12 +85,18 @@ namespace FakeTravel.API
               });//ÃÌº”xml∏Ò Ω
 
             services.AddTransient<ITouristRouteReposity, TouristRouteReposity>();
+
             services.AddDbContext<AppDbContext>(option =>
             {
                 //option.UseSqlServer("server=localhost;Database=FakeTravelDb;User Id=sa;Password=PassWord22!");
                 option.UseSqlServer(Configuration["DbContext:ConnectionString"]);
             });
+
             services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
+            services.AddHttpClient();
+            services.AddSingleton<IActionContextAccessor, ActionContextAccessor>();
+
+            services.AddTransient<IPropertyMappingService,PropertyMappingService>();
             //services.AddRazorPages();
         }
 

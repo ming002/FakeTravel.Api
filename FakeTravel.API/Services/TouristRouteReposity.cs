@@ -1,4 +1,6 @@
 ﻿using FakeTravel.API.Database;
+using FakeTravel.API.Dtos;
+using FakeTravel.API.Helper;
 using FakeTravel.API.Models;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -11,9 +13,13 @@ namespace FakeTravel.API.Services
     public class TouristRouteReposity : ITouristRouteReposity
     {
         private readonly AppDbContext _context;
-        public TouristRouteReposity(AppDbContext context)
+        private readonly IPropertyMappingService _propertyMappingService;
+        public TouristRouteReposity(
+            AppDbContext context,
+            IPropertyMappingService propertyMappingService)
         {
             _context = context;
+            _propertyMappingService = propertyMappingService;
         }
 
         public void AddTouristRoute(TouristRoute touristRoute)
@@ -55,18 +61,23 @@ namespace FakeTravel.API.Services
             return await _context.TouristRoutes.Include(x => x.TouristRoutePictures).FirstOrDefaultAsync(r => r.Id == id);
         }
 
-        public async Task<IEnumerable<TouristRoute>> GetTouristRoutesAsync(
+        public async Task<PagInationList<TouristRoute>> GetTouristRoutesAsync(
             string keyword,
             string operatorType,
-            int? raringValue)
+            int? raringValue,
+            int pageSize,
+            int pageNum,
+            string orderBy)
         {
             IQueryable<TouristRoute> result = _context.
                 TouristRoutes.
                 Include(x => x.TouristRoutePictures);
+
             if (!string.IsNullOrEmpty(keyword))
             {
                 result = result.Where(x => x.Title.Contains(keyword));
             }
+
             if (raringValue >= 0)
             {
                 switch (operatorType)
@@ -84,7 +95,22 @@ namespace FakeTravel.API.Services
                         break;
                 }
             }
-            return await result.ToListAsync();//添加tolist能立即执行数据库查询;
+
+            if(!string.IsNullOrEmpty(orderBy))
+            {
+                if (orderBy.Equals("originalPrice", StringComparison.OrdinalIgnoreCase))
+                {
+                    result = result.OrderBy(t => t.OriginPrice);
+                }
+            }
+
+            var touristRouteMappingDictionary = _propertyMappingService.
+                GetPropertyMapping<TouristRouteDto,TouristRoute>();
+
+            result.ApplySort
+
+            return await PagInationList<TouristRoute>
+                .CreateAsync(pageNum,pageSize,result);
         }
 
         public void DeleteTouristRoute(TouristRoute touristRoute)
@@ -145,6 +171,39 @@ namespace FakeTravel.API.Services
         public void DeleteShoppingCartItem(LineItem lineItem)
         {
               _context.LineItems.Remove(lineItem);
+        }
+
+        public async Task<IEnumerable<LineItem>> GetShoppingCartItemsByIdListAsync(IEnumerable<int> ids)
+        {
+            return await _context.LineItems.Where(x=>ids.Contains(x.Id)).ToListAsync();
+        }
+
+        public void DeleteShoppingCartItems(IEnumerable<LineItem> lineItems)
+        {
+            _context.LineItems.RemoveRange(lineItems);
+        }
+
+        public async Task AddOrderAsync(Order order)
+        {
+            await _context.Orders.AddAsync(order);
+        }
+
+        public async Task<PagInationList<Order>> GetOrdersByUserId(
+            string userId,int pageSize,int pageNum)
+        {
+            IQueryable<Order> result = _context.Orders
+                .Where(x => x.UserId == userId);
+
+            return await PagInationList<Order>
+                .CreateAsync(pageNum, pageSize, result);
+        }
+
+        public Task<Order> GetOrderById(Guid orderId)
+        {
+            return _context.Orders
+                .Include(x => x.OrderItems)
+                .ThenInclude(x => x.TouristRoute)
+                .FirstOrDefaultAsync(x => x.Id == orderId);
         }
     }
 }
